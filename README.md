@@ -1,75 +1,123 @@
-Based on the provided repository files, here is a detailed, human-friendly description of the project, its features, interactions, and implications.
+This document provides a detailed description of the Gemini Repomix Assistant, a comprehensive system designed for AI-powered code analysis and interaction. The system is composed of three main parts: a backend service, a web-based user interface, and a Visual Studio Code extension.
 
-### Project Overview: The Gemini Repomix Assistant
+### System Architecture Overview
 
-The Gemini Repomix Assistant is a sophisticated, full-stack web application designed to serve as an AI-powered partner for software development. At its core, it enables developers to have intelligent, context-aware conversations about their codebases with Large Language Models (LLMs) like Google's Gemini and OpenAI's GPT series.
+The system is a full-stack application with a project-centric and collaborative architecture.
 
-The project's central innovation is its ability to bridge the gap between a developer's local coding environment (in VS Code), a powerful web-based AI interface, and a collaborative, project-centric backend. It uses the `Repomix` tool to package entire code repositories into a single, context-rich format that the AI can easily understand, leading to highly accurate and relevant analysis, refactoring, and code generation.
+*   **Backend (`backend/`)**: A Node.js application built with Express and TypeScript. It serves as the central hub, handling API requests, business logic, authentication, and communication with external services like AI models and databases.
+*   **Frontend (`gemini-repomix-ui/`)**: A modern single-page application (SPA) built with React, Vite, and TypeScript. It provides a rich, interactive user interface for managing projects, chatting with the AI, and viewing code.
+*   **VS Code Extension (`repochatextension/`)**: An extension for Visual Studio Code that integrates the user's local development environment directly with the web application, enabling features like local code analysis, file deployment, and running build scripts.
 
-### Core Architecture & Components
+Communication between the frontend and the VS Code extension is facilitated by a real-time messaging layer using Supabase Realtime, allowing for seamless interaction between the web UI and the local IDE.
 
-The system is architecturally divided into three main components that work in concert:
+---
 
-1.  **Backend (Node.js/Express.js & TypeScript):** This is the secure central nervous system of the application. It's not just a simple API server; it's a trusted intermediary that:
-    *   Manages user authentication and session data via Supabase.
-    *   Securely stores user-specific API keys (for Gemini, OpenAI) and other preferences in a PostgreSQL database, ensuring that sensitive keys never get exposed to the frontend.
-    *   Orchestrates calls to the AI models, injecting the necessary context and API keys on behalf of the user.
-    *   Runs the `repomix` command-line tool in a child process to generate project context packs from Git repositories.
-    *   Provides a REST API for all frontend operations, from managing projects and chat history to fetching configuration.
-    *   Handles the OAuth flow for integrations like Google Workspace.
+### Backend Details
 
-2.  **Frontend (React, Vite, & TypeScript):** This is the rich, interactive web interface where the user spends their time. It's a modern single-page application built for a seamless user experience.
-    *   **UI/UX:** Built with React and styled with TailwindCSS, it features a responsive, multi-panel layout that can switch to a "fullscreen" mode for focused work on code.
-    *   **State Management:** It employs a hybrid state management strategy, using **Redux Toolkit** for global UI state (like panel visibility, authentication status) and **TanStack Query** for managing all server-side data (fetching, caching, and mutating project data, chat history, etc.). This makes the UI resilient, performant, and automatically synchronized with the backend.
-    *   **Component Structure:** The UI is highly componentized, with dedicated components for the chat interface, file tree, code viewers, configuration panels, and more. React Context is used to manage cross-cutting concerns like the workspace data, deployment logic, and real-time connectivity.
+The backend is responsible for the core logic of the application.
 
-3.  **VS Code Extension:** This is the critical bridge to the developer's local machine. It allows the web UI to securely interact with the local file system and development environment, something a browser cannot do alone.
-    *   **Real-time Communication:** The extension establishes a persistent, real-time connection to the backend using **Supabase Realtime channels**. It listens for commands from the web UI and broadcasts its status.
-    *   **Local Context Generation:** It can run `repomix` directly on the user's currently open workspace, providing the most up-to-date context to the AI, including uncommitted changes.
-    *   **File System Operations:** It acts as a secure agent for the UI, applying AI-suggested code changes directly to the local files, creating new projects from templates, and running build scripts.
+**Key Technologies:**
+*   **Runtime/Framework:** Node.js, Express.js
+*   **Language:** TypeScript
+*   **Core Dependencies:** `@google/generative-ai`, `openai`, `@supabase/supabase-js`, `googleapis`.
 
-### Key Features and User Interactions
+**Core Features & Services:**
 
-The application offers a comprehensive suite of features that guide a developer from project setup to AI-assisted coding and deployment.
+1.  **Authentication & Authorization:**
+    *   Integrates with Supabase for user management, supporting email/password and GitHub OAuth.
+    *   A robust `authMiddleware.ts` protects API endpoints using JWT Bearer tokens. It also supports token authentication via query parameters for specific use cases like browser-based OAuth redirects.
 
-#### 1. Context Generation & Management
-A user can provide code context to the AI in multiple ways:
-*   **From a Git URL:** The user provides a public Git repository URL. The backend clones it and uses Repomix to generate a context pack.
-*   **From the Local VS Code Workspace:** With one click, the user can trigger the VS Code extension to run Repomix on their currently open project. This is the most powerful method as it captures the exact state of their work.
-*   **From a Local Folder:** Using the File System Access API, the user can select a folder on their machine, and the application will read the files, respect `.gitignore` rules, and generate the context pack entirely in the browser.
-*   **File Management:** All generated packs are saved and associated with the user's account, allowing them to quickly load a previous context.
+2.  **AI Model Routing & Interaction (`services/geminiService.ts`, `openaiService.ts`, `openrouterService.ts`):**
+    *   The backend acts as a versatile proxy and router for multiple AI providers. Based on the model selected by the user (`modelCallName`), incoming chat requests are directed to the appropriate service.
+    *   It supports Gemini, OpenAI, and a wide array of models via OpenRouter. The available models are dynamically configured through `gemini_models_config.json`, which includes pricing, capabilities, and API identifiers.
+    *   Handles both standard request-response and real-time streaming chat using Server-Sent Events (SSE).
 
-#### 2. The AI Chat Experience
-*   **Intelligent Chat Interface:** The central panel is a feature-rich chat interface where users interact with the AI.
-*   **Contextual Prompts:** When a repository is loaded, a file tree is displayed. The user can select specific files or entire folders to be automatically included as context in their next prompt.
-*   **Streaming & Smooth Typing:** Responses from the AI can be streamed word-by-word, with a smooth typing animation for a more natural feel.
-*   **Model Selection & Tuning:** Users can choose from a variety of Gemini and OpenAI models and fine-tune generation parameters like temperature, top-p, and max tokens.
+3.  **Tool Use & Function Calling (MCP - Model-facing Capability Platform):**
+    *   A key architectural feature is the MCP, defined in `services/mcpService.ts` and configured via `mcp_config.json`.
+    *   This service abstracts tool definitions (e.g., searching Google Drive, performing a Google search) and presents them to the AI models in their required format (Gemini `functionDeclarations` or OpenAI `tools`).
+    *   When an AI model decides to use a tool, the MCP dispatches the request to the appropriate internal handler. For example, a request for `search_drive_files` is routed to the `googleWorkspaceService.ts`. This makes the system highly extensible for adding new tools.
 
-#### 3. Code Analysis and Interaction
-*   **File Tree & Viewer:** In the fullscreen "workspace" view, users can navigate the project's file tree and view the content of any file with syntax highlighting (powered by Shikiji).
-*   **Side-by-Side Diff Viewer:** When the AI suggests changes to an existing file, a "Compare" button appears. This opens a diff view showing the original code next to the AI's suggestions, with clear highlighting of additions and deletions.
-*   **Code Block Awareness:** The application intelligently parses code blocks from the AI's response. It can identify the target file path from comments within the code block and resolve it against the project's file structure.
-*   **"Review & Apply All" Workflow:** A dedicated view allows the user to see *only* the code blocks from the entire conversation. They can review all suggested changes in one place, select the ones they want, and apply them all with a single click.
+4.  **Google Workspace Integration (`services/googleWorkspaceService.ts`):**
+    *   Provides a rich set of tools for interacting with a user's Google account.
+    *   Handles the entire OAuth2 flow for authorization, securely storing tokens in the Supabase database.
+    *   Implements functions for Drive (search, read, create), Calendar (list, get events), Gmail (search, read, send), Sheets, and Chat.
 
-#### 4. Tooling and Automation
-*   **Google Workspace Integration:** Users can authenticate their Google account via OAuth, granting the AI access to a powerful set of tools to interact with their Google Drive, Calendar, Gmail, and Sheets.
-*   **Build Script Management:** Users can create, save, and manage custom shell scripts directly within the UI. These scripts can be sent to the VS Code extension to be executed in the local workspace terminal, with the output streamed back to the UI. This is perfect for running builds, tests, or deployment tasks.
-*   **Automated Diagnostics:** After applying changes, the user can trigger a "lint check." The VS Code extension will gather all diagnostic information (errors, warnings) from the language server for the modified files and send it back to the UI, automatically populating the next prompt with the issues found.
+5.  **Project & Session Management (`services/projectService.ts`, `chatSessionService.ts`):**
+    *   The application is built around a project-centric model. Users can create projects, add repositories, and invite other users with specific roles (`admin`, `member`, `viewer`).
+    *   Chat sessions are associated with either a user's personal space or a specific project, allowing for collaborative chat histories within a team context.
 
-#### 5. Project Management & Collaboration
-The application is built on a project-centric architecture, moving beyond a simple personal tool.
-*   **Projects as Workspaces:** Users can create projects, which serve as shared workspaces. Chat sessions, repositories, and configurations are all scoped to a project.
-*   **Role-Based Access Control:** Users can be invited to projects with specific roles (`admin`, `member`, `viewer`), enforced by Supabase's Row Level Security. This ensures granular and secure access to project data.
-*   **Centralized Repositories:** Project admins can associate multiple Git repositories with a single project, making them easily accessible to all project members.
+6.  **`Repomix` Integration (`routes/repomixRoutes.ts`):**
+    *   The backend executes the `repomix` Command-Line Interface (CLI) as a child process to analyze remote Git repositories.
+    *   It handles user-defined include/exclude patterns and stores the generated output files on the server.
+    *   Metadata about each generated file (user, repo URL, file size, token count) is saved to the database.
 
-### Implications and Presentation
-This project is more than just a chat interface; it's a holistic AI development environment.
+7.  **User Configuration (`services/userApiKeyService.ts`):**
+    *   Manages all user-specific settings, such as API keys for various AI providers, the last selected model, model tuning parameters (temperature, topP, etc.), and custom system prompts.
+    *   Includes an endpoint (`/api/user-config/users`) to list all registered users, facilitating the "add member" feature in projects.
 
-*   **For a GitHub README:** The key selling point is the seamless integration between the local IDE and a powerful web UI. The headline feature is "Chat with your local codebase, visually compare changes, and apply them with one click." The README should showcase the workflow: Generate context from VS Code -> Ask the AI to refactor -> Review changes in the diff viewer -> Apply changes back to your local files.
+8.  **Cost Tracking (`services/costService.ts`):**
+    *   After every AI API call, this service is invoked to record detailed usage statistics, including the model used, input/output token counts, and the calculated cost based on the pricing information in `gemini_models_config.json`. This data is stored per-user in the database.
 
-*   **For a Technical Audience:** The architectural choices are the main highlight.
-    *   **Decoupling:** The three-part architecture (frontend, backend, extension) is a robust design that separates concerns effectively.
-    *   **Security:** The backend acts as a secure vault for API keys, preventing them from ever being exposed client-side. The use of Supabase's RLS provides enterprise-grade data security for collaborative projects.
-    *   **Real-time Interactivity:** The use of Supabase Realtime for bidirectional communication with the VS Code extension is a powerful pattern that enables features impossible in a standard web app, effectively turning the web UI into a remote control for the IDE.
-    *   **Scalability:** The project-centric database schema is built for collaboration and can easily scale to support teams and organizations.
-    *   **Developer Experience:** The combination of TanStack Query for server state and Redux for UI state, along with extensive custom hooks, creates a highly maintainable and pleasant codebase to work on.
+---
+
+### Frontend UI Details
+
+The frontend provides a responsive and feature-rich interface for users.
+
+**Key Technologies:**
+*   **Framework/Tooling:** React, Vite, TypeScript, Tailwind CSS
+*   **State Management:** Redux Toolkit (for global UI state) and TanStack Query (for server state management).
+*   **Syntax Highlighting:** Shikiji
+
+**Core Features & Components:**
+
+1.  **State Management Strategy:**
+    *   **TanStack Query** is the primary driver for data fetching, caching, and mutations, providing a robust and efficient way to interact with the backend. This is seen in the various custom hooks like `useProjects`, `useChatSessions`, and `useUserConfiguration`.
+    *   **Redux Toolkit** is used for managing purely client-side global state, such as UI toggles (`uiSlice`), authentication status (`authSlice`), and transient messages (`statusSlice`).
+
+2.  **Workspace & Layout:**
+    *   The `MainWorkspaceLayout.tsx` uses `react-resizable-panels` to create a professional, multi-pane UI that can be toggled between a standard view and a "fullscreen" developer-focused view.
+    *   **WorkspaceContext** is a central provider that manages the state of the currently loaded repository, including its file tree, file content, and user selections.
+
+3.  **Code Interaction:**
+    *   **`FileTree.tsx`**: Displays the directory structure of a loaded repository, allowing users to select one or more files to be included as context in their prompts.
+    *   **`CodeBlockRenderer.tsx`**: A sophisticated component that renders code blocks with syntax highlighting. It automatically detects file paths commented in the code and provides "Copy", "Locate" (to edit the path), and "Compare" functionality.
+    *   **`ComparisonView.tsx`**: When a user clicks "Compare," this component shows a side-by-side diff of the original file content against the AI's suggested changes.
+
+4.  **Deployment & Actions (`DeploymentPanel.tsx`, `useCodeDeployer.ts`):**
+    *   Users can apply AI-generated code changes directly to their local filesystem.
+    *   The **Deployment Target** can be switched between "Local Folder" (using the browser's File System Access API) and "VSCode" (via the extension).
+    *   The system supports creating backups before overwriting local files and provides an "Undo All" feature.
+    *   It also integrates a **Build Script Manager**, allowing users to define, save, and run shell scripts within their VS Code workspace directly from the UI.
+
+5.  **Project Management (`ProjectManagerPanel.tsx`, `useProjects.ts`):**
+    *   A complete interface for creating projects, managing repositories associated with them, and inviting/managing project members and their roles.
+
+---
+
+### VS Code Extension Details
+
+The extension acts as a vital bridge between the web UI and the developer's local machine.
+
+**Key Functionality:**
+
+1.  **Real-time Connection (`realtimeService.ts`):**
+    *   Connects to a user-specific Supabase Realtime channel to listen for commands from the web UI.
+    *   Uses a **presence** system to notify the UI that the extension is online and active.
+    *   Includes a `ConnectionManager` that implements a health check to automatically re-establish the connection if it drops.
+
+2.  **Local Workspace Integration (`commands/`):**
+    *   **Generate from Workspace**: On request from the UI, it runs `repomix` on the current open folder and streams the result back to the UI.
+    *   **File Deployment**: Listens for `request_deploy_file` events and uses the `vscode.workspace.fs` API to write or create files in the user's workspace.
+    *   **Undo Changes**: Listens for `request_undo_all_deployments_vscode` and runs `git checkout -- .` to revert uncommitted changes.
+    *   **Run Scripts**: Listens for requests to run build scripts, executes them in the local terminal, and streams the output back to the UI's status log.
+    *   **Run Diagnostics (Linting)**: On request, it can open files in the editor, wait for a configurable delay, and then collect all diagnostic information (errors/warnings) from VS Code's language servers, sending the results back to the UI for analysis by the AI.
+
+3.  **Local Project Scaffolding (`commands/projectSetupHandlers.ts`):**
+    *   Provides a powerful feature to create new projects from predefined templates directly from the UI.
+    *   When a user initiates project creation, the extension prompts them to select a parent directory. It then creates the new project folder and opens it.
+    *   An autorun task then takes over, executing a series of steps defined in the template: running base commands (like `npm create vite`), installing dependencies, creating configuration files (like `tailwind.config.js`), and finally, running `repomix` on the newly created project to load it into the UI.
+
+4.  **Multi-User Authentication (`auth.ts`):**
+    *   Securely stores session tokens for multiple user accounts using VS Code's `SecretStorage`.
+    *   Provides a webview in the sidebar for users to log in, switch between saved accounts, or log out.
